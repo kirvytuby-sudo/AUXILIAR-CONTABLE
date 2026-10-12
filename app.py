@@ -3,6 +3,7 @@ AUXILIAR DE REGISTROS — Punto de entrada con st.navigation()
 Controla el sidebar: labels correctos, orden definido, sin páginas duplicadas.
 v3 — secciones: Nomina / Ventas / Banco / SAT-IMSS-Contabilidad
      divisores CSS via stNavSectionHeader (2026-08-12)
+     rebuild: 2026-10-12
 """
 import streamlit as st
 
