@@ -55,7 +55,7 @@ def clasificar_bbva(desc: str, monto: float):
       VENTAS PUNTOS TDC / VENTAS CREDITO
         / TERMINALES PV / TDC INTER       → col 18 (Dep. Tránsito Tarjetas Bancomer)
       DEPOSITO EN EFECTIVO                → col 15 (Caja 101-01-0001)
-      Cualquier otra descripción          → None  (no clasificado)
+      Cualquier otra descripción (TPV)    → col 18 (Dep. Tránsito Tarjetas Bancomer)
     """
     d = desc.upper()
     if "AMEX" in d:
@@ -66,7 +66,8 @@ def clasificar_bbva(desc: str, monto: float):
         return 18
     if "DEPOSITO EN EFECTIVO" in d or "DEP.EFECTIVO" in d or "DEP EN EFECTIVO" in d:
         return 15
-    return None
+    # Todo depósito BBVA que no sea AMEX ni Efectivo va a TPV BBVA (106-01-0001-0013)
+    return 18
 
 
 def clasificar_inbursa(desc: str, monto: float):
