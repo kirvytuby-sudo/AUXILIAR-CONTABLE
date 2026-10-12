@@ -304,14 +304,23 @@ with col_res:
                 with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
                     tmp.write(archivo.read()); tmp_path = tmp.name
                 if ext == ".pdf":
-                    # Guardar texto para posible fallback IA
+                    # Guardar texto para posible fallback IA y detectar PDF imagen
+                    _n_pages_pdf = 0
                     try:
                         with pdfplumber_mod.open(tmp_path) as _pdf:
+                            _n_pages_pdf = len(_pdf.pages)
                             _texto_pdf_para_ia = "\n".join(
                                 (p.extract_text() or "") for p in _pdf.pages
                             )
                     except Exception:
                         pass
+                    # Aviso si es PDF de imagen escaneada con muchas páginas (OCR lento)
+                    if _n_pages_pdf > 10 and len(_texto_pdf_para_ia.strip()) < 300:
+                        st.info(
+                            f"⏳ Este PDF tiene **{_n_pages_pdf} páginas escaneadas** (sin texto digital). "
+                            "Se procesará con OCR — puede tardar **3 a 8 minutos** en Streamlit Cloud. "
+                            "Por favor espera sin cerrar ni recargar la página."
+                        )
                     movs_raw = ec.leer_pdf(tmp_path, pdfplumber_mod, banco_sel)
                     # Estrategia 3: back-calc saldo_ini desde primer movimiento (5-tuplas, ej. BBVA CM)
                     if movs_raw and len(movs_raw[0]) == 5 and abs(saldo_ini) < 0.01:

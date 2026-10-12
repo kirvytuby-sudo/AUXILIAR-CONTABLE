@@ -229,7 +229,15 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
         return movimientos
 
     try:
-        imgs = _cvt(ruta, dpi=200)
+        # Determinar DPI seguro según tamaño del PDF
+        try:
+            import pdfplumber as _ppl_sz2
+            with _ppl_sz2.open(ruta) as _pdf_sz2:
+                _n_pags2 = len(_pdf_sz2.pages)
+        except Exception:
+            _n_pags2 = 999
+        _dpi2 = 200 if _n_pags2 <= 10 else (150 if _n_pags2 <= 20 else 120)
+        imgs = _cvt(ruta, dpi=_dpi2)
     except Exception:
         return movimientos
 
@@ -1227,8 +1235,28 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
         try:
             from pdf2image import convert_from_path as _c2p
             import pytesseract as _tsr
-            _imgs = _c2p(ruta, dpi=200)
-            texto = "\n".join(_tsr.image_to_string(img, lang="eng") for img in _imgs)
+            # ── Determinar parámetros seguros según número de páginas ──
+            try:
+                import pdfplumber as _ppl_sz
+                with _ppl_sz.open(ruta) as _pdf_sz:
+                    _n_pags = len(_pdf_sz.pages)
+            except Exception:
+                _n_pags = 999
+            # PDFs grandes: reducir DPI para no agotar memoria en Streamlit Cloud.
+            # 200 DPI: ~12 MB/pág → 36 págs → ~430 MB (crash).
+            # 120 DPI: ~4 MB/pág → 36 págs → ~145 MB (viable).
+            _ocr_dpi = 200 if _n_pags <= 10 else (150 if _n_pags <= 20 else 120)
+            # Procesar en lotes de 15 páginas para liberar memoria entre lotes
+            _lote = 15
+            _textos_lote = []
+            for _ini_pag in range(1, _n_pags + 1, _lote):
+                _fin_pag = min(_ini_pag + _lote - 1, _n_pags)
+                _imgs_lote = _c2p(ruta, dpi=_ocr_dpi, first_page=_ini_pag, last_page=_fin_pag)
+                for _img in _imgs_lote:
+                    _textos_lote.append(_tsr.image_to_string(_img, lang="eng"))
+                del _imgs_lote  # liberar memoria entre lotes
+            _imgs = []  # no se usa más, solo el texto
+            texto = "\n".join(_textos_lote)
             # Normalizar palabras clave frecuentemente partidas por OCR
             texto = re.sub(r'DESTI\s+NATARIO', 'DESTINATARIO', texto, flags=re.I)
             texto = re.sub(r'CON\s+CEPTO', 'CONCEPTO', texto, flags=re.I)
@@ -1609,7 +1637,14 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
     movimientos = []
 
     try:
-        imgs = convert_from_path(ruta, dpi=200)
+        try:
+            import pdfplumber as _ppl_sz3
+            with _ppl_sz3.open(ruta) as _pdf_sz3:
+                _n_pags3 = len(_pdf_sz3.pages)
+        except Exception:
+            _n_pags3 = 999
+        _dpi3 = 200 if _n_pags3 <= 10 else (150 if _n_pags3 <= 20 else 120)
+        imgs = convert_from_path(ruta, dpi=_dpi3)
     except Exception:
         return []
 
