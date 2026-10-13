@@ -18,7 +18,58 @@ st.set_page_config(page_title="Depósitos Bancarios", page_icon="🏦", layout="
 # ─── Estilos ──────────────────────────────────────────────────────────────────
 import _theme
 _theme.aplicar_header("🏦 Depósitos Bancarios", "BBVA, Banorte e Inbursa → póliza de depósitos con cuentas de tránsito")
-st.caption("Genera la póliza contable desde los estados de cuenta de BBVA, Banorte e Inbursa.")
+
+st.markdown("""
+<style>
+/* ── Cabeceras de banco ─────────────────────────────────────── */
+.bk-hdr {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 22px; border-radius: 10px 10px 0 0;
+    margin-bottom: 0; font-family: 'Aptos Narrow', 'Segoe UI', sans-serif;
+}
+.bk-hdr-bbva    { background: linear-gradient(120deg, #004481 0%, #0070CC 100%); }
+.bk-hdr-banorte { background: linear-gradient(120deg, #9B1B30 0%, #C8102E 100%); }
+.bk-hdr-inbursa { background: linear-gradient(120deg, #B34700 0%, #E06000 100%); }
+.bk-hdr-icon { font-size: 2rem; line-height: 1; }
+.bk-hdr-text h3 { margin: 0; font-size: 1.15rem; font-weight: 700; color: #FFFFFF; }
+.bk-hdr-text p  { margin: 2px 0 0; font-size: 0.78rem; color: rgba(255,255,255,0.78); }
+
+/* ── Cuerpo del panel de banco ──────────────────────────────── */
+.bk-body {
+    border: 2px solid #E2E8F0; border-top: none;
+    border-radius: 0 0 10px 10px;
+    padding: 18px 20px 12px;
+    margin-bottom: 28px;
+    background: #FAFBFC;
+}
+.bk-body-bbva    { border-color: #004481; background: #F0F7FF; }
+.bk-body-banorte { border-color: #C8102E; background: #FFF5F5; }
+.bk-body-inbursa { border-color: #E06000; background: #FFF8F0; }
+
+/* ── Etiqueta de sección interna ────────────────────────────── */
+.bk-label {
+    font-size: 0.78rem; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; margin-bottom: 4px; margin-top: 10px;
+}
+.bk-label-bbva    { color: #004481; }
+.bk-label-banorte { color: #9B1B30; }
+.bk-label-inbursa { color: #B34700; }
+
+/* ── Separador de resultados ────────────────────────────────── */
+.bk-result-sep {
+    height: 3px; border-radius: 2px; margin: 16px 0 12px;
+}
+.bk-result-sep-bbva    { background: linear-gradient(90deg,#004481,#0070CC55); }
+.bk-result-sep-banorte { background: linear-gradient(90deg,#C8102E,#C8102E55); }
+.bk-result-sep-inbursa { background: linear-gradient(90deg,#E06000,#E0600055); }
+
+/* ── Botón Generar con color banco ──────────────────────────── */
+[data-testid="stButton"] > button[kind="primary"] { border-radius: 8px; }
+
+/* ── Upload box sin margen extra ────────────────────────────── */
+[data-testid="stFileUploader"] { margin-top: 0 !important; }
+</style>
+""", unsafe_allow_html=True)
 
 # ─── Constantes contables ──────────────────────────────────────────────────────
 CARGOS = {
@@ -807,26 +858,60 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
 import _viewer as _vwr
 
 _BANCOS = [
-    {"key": "bbva",    "label": "🟦 BBVA Bancomer",  "ico": "🟦", "nombre": "BBVA"},
-    {"key": "banorte", "label": "🟥 Banorte",         "ico": "🟥", "nombre": "BANORTE"},
-    {"key": "inbursa", "label": "🟧 Inbursa",          "ico": "🟧", "nombre": "INBURSA"},
+    {
+        "key": "bbva",    "nombre": "BBVA",
+        "ico_svg": "🏦",  "subtitulo": "102-01-0001-0003",
+        "icon_emoji": "🟦",
+        "grad": "bk-hdr-bbva", "body": "bk-body-bbva",
+        "lbl_cls": "bk-label-bbva", "sep_cls": "bk-result-sep-bbva",
+        "btn_color": "#004481",
+    },
+    {
+        "key": "banorte", "nombre": "BANORTE",
+        "ico_svg": "🏛️",  "subtitulo": "102-01-0001-0001",
+        "icon_emoji": "🟥",
+        "grad": "bk-hdr-banorte", "body": "bk-body-banorte",
+        "lbl_cls": "bk-label-banorte", "sep_cls": "bk-result-sep-banorte",
+        "btn_color": "#C8102E",
+    },
+    {
+        "key": "inbursa", "nombre": "INBURSA",
+        "ico_svg": "🏢",  "subtitulo": "102-01-0001-0002",
+        "icon_emoji": "🟧",
+        "grad": "bk-hdr-inbursa", "body": "bk-body-inbursa",
+        "lbl_cls": "bk-label-inbursa", "sep_cls": "bk-result-sep-inbursa",
+        "btn_color": "#E06000",
+    },
 ]
 
 for _bcfg in _BANCOS:
-    _k   = _bcfg["key"]
-    _lbl = _bcfg["label"]
-    _ico = _bcfg["ico"]
-    _bnc = _bcfg["nombre"]
+    _k       = _bcfg["key"]
+    _bnc     = _bcfg["nombre"]
+    _ico     = _bcfg["icon_emoji"]
     _res_key = f"dep_result_{_k}"
 
     if _res_key not in st.session_state:
         st.session_state[_res_key] = None
 
-    with st.expander(_lbl, expanded=True):
+    # ── Cabecera de banco con color ────────────────────────────────────────────
+    st.markdown(f"""
+    <div class="bk-hdr {_bcfg['grad']}">
+        <div class="bk-hdr-icon">{_bcfg['ico_svg']}</div>
+        <div class="bk-hdr-text">
+            <h3>{_bnc}</h3>
+            <p>Cuenta contable: {_bcfg['subtitulo']} &nbsp;|&nbsp; Estados de cuenta .xlsx</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Cuerpo del panel ───────────────────────────────────────────────────────
+    with st.container():
+        st.markdown(f'<div class="bk-body {_bcfg["body"]}">', unsafe_allow_html=True)
         _c_files, _c_plantilla = st.columns([3, 2])
 
         with _c_files:
-            st.markdown(f"**Estados de cuenta {_bnc}** *(uno o varios meses)*")
+            st.markdown(f'<p class="bk-label {_bcfg["lbl_cls"]}">📂 Estados de cuenta</p>',
+                        unsafe_allow_html=True)
             _files = st.file_uploader(
                 f"Estado de cuenta {_bnc} (.xlsx)",
                 type=["xlsx"], key=f"files_{_k}",
@@ -834,19 +919,22 @@ for _bcfg in _BANCOS:
                 label_visibility="collapsed",
             )
             if _files:
-                st.caption(f"📎 {len(_files)} archivo(s) cargado(s)")
+                st.caption(f"✅ {len(_files)} archivo(s) cargado(s)")
 
         with _c_plantilla:
-            st.markdown("**📋 Plantilla** *(opcional)*")
+            st.markdown(f'<p class="bk-label {_bcfg["lbl_cls"]}">📋 Plantilla (opcional)</p>',
+                        unsafe_allow_html=True)
             _plantilla = st.file_uploader(
                 "Plantilla de Depósitos (.xlsx)",
                 type=["xlsx", "xlsm"], key=f"plantilla_{_k}",
                 label_visibility="collapsed",
             )
             if _plantilla:
-                st.caption(f"📎 {_plantilla.name}")
+                st.caption(f"✅ {_plantilla.name}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        if st.button(f"⚙️ Generar Póliza {_bnc}", type="primary",
+        st.markdown("")   # espacio antes del botón
+        if st.button(f"⚙️  Generar Póliza {_bnc}", type="primary",
                      disabled=not _files, key=f"btn_{_k}"):
             _todos_ok, _todos_nc = [], []
             _arch_bytes = []
@@ -917,7 +1005,8 @@ for _bcfg in _BANCOS:
             _df_ok   = pd.DataFrame(_tok)
             _tot_g   = _df_ok["monto"].sum()
 
-            st.divider()
+            st.markdown(f'<div class="bk-result-sep {_bcfg["sep_cls"]}"></div>',
+                        unsafe_allow_html=True)
             _mc = st.columns(3)
             _mc[0].metric(f"{_ico} {_bnc}", f"${_tot_g:,.2f}", f"{len(_df_ok)} mov.")
             _meses_ok = sorted(_df_ok["fecha"].apply(
