@@ -66,8 +66,8 @@ def clasificar_bbva(desc: str, monto: float):
         return 18
     if "DEPOSITO EN EFECTIVO" in d or "DEP.EFECTIVO" in d or "DEP EN EFECTIVO" in d:
         return 15
-    # GAS RIO DE LA PLATA <terminal>C/D → tránsito Banorte (106-01-0001-0011)
-    if "GAS RIO DE LA PLATA" in d:
+    # GAS/SERV RIO DE LA PLATA <terminal>C/D → tránsito Banorte (106-01-0001-0011)
+    if "RIO DE LA PLATA" in d:
         return 16
     # Todo depósito BBVA que no sea AMEX ni Efectivo va a TPV BBVA (106-01-0001-0013)
     return 18
