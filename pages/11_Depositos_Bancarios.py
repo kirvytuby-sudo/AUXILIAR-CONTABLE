@@ -803,221 +803,176 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
-# ─── UI ─────────────────────────────────────────────────────────────────────
-col1, col2, col3 = st.columns(3)
+# ─── UI — por banco (independiente) ─────────────────────────────────────────
+import _viewer as _vwr
 
-with col1:
-    st.markdown('<div class="upload-box">', unsafe_allow_html=True)
-    st.markdown("**🟦 BBVA Bancomer** *(uno o varios meses)*")
-    files_bbva = st.file_uploader("Estado de cuenta BBVA (.xlsx)",
-                                   type=["xlsx"], key="bbva",
-                                   accept_multiple_files=True,
-                                   label_visibility="collapsed")
-    if files_bbva:
-        st.caption(f"📎 {len(files_bbva)} archivo(s) cargado(s)")
-    st.markdown('</div>', unsafe_allow_html=True)
+_BANCOS = [
+    {"key": "bbva",    "label": "🟦 BBVA Bancomer",  "ico": "🟦", "nombre": "BBVA"},
+    {"key": "banorte", "label": "🟥 Banorte",         "ico": "🟥", "nombre": "BANORTE"},
+    {"key": "inbursa", "label": "🟧 Inbursa",          "ico": "🟧", "nombre": "INBURSA"},
+]
 
-with col2:
-    st.markdown('<div class="upload-box">', unsafe_allow_html=True)
-    st.markdown("**🟥 Banorte** *(uno o varios meses)*")
-    files_banorte = st.file_uploader("Estado de cuenta Banorte (.xlsx)",
-                                      type=["xlsx"], key="banorte",
-                                      accept_multiple_files=True,
-                                      label_visibility="collapsed")
-    if files_banorte:
-        st.caption(f"📎 {len(files_banorte)} archivo(s) cargado(s)")
-    st.markdown('</div>', unsafe_allow_html=True)
+for _bcfg in _BANCOS:
+    _k   = _bcfg["key"]
+    _lbl = _bcfg["label"]
+    _ico = _bcfg["ico"]
+    _bnc = _bcfg["nombre"]
+    _res_key = f"dep_result_{_k}"
 
-with col3:
-    st.markdown('<div class="upload-box">', unsafe_allow_html=True)
-    st.markdown("**🟧 Inbursa** *(uno o varios meses)*")
-    files_inbursa = st.file_uploader("Estado de cuenta Inbursa (.xlsx)",
-                                      type=["xlsx"], key="inbursa",
-                                      accept_multiple_files=True,
-                                      label_visibility="collapsed")
-    if files_inbursa:
-        st.caption(f"📎 {len(files_inbursa)} archivo(s) cargado(s)")
-    st.markdown('</div>', unsafe_allow_html=True)
+    if _res_key not in st.session_state:
+        st.session_state[_res_key] = None
 
-st.markdown('<div class="upload-box">', unsafe_allow_html=True)
-st.markdown("**📋 PLANTILLA DE DEPOSITOS**  *(opcional — si se sube, los datos se escriben sobre ella)*")
-file_plantilla = st.file_uploader(
-    "Plantilla de Depósitos (.xlsx)",
-    type=["xlsx", "xlsm"], key="plantilla",
-    label_visibility="collapsed",
-)
-st.markdown('</div>', unsafe_allow_html=True)
+    with st.expander(_lbl, expanded=True):
+        _c_files, _c_plantilla = st.columns([3, 2])
 
-st.divider()
+        with _c_files:
+            st.markdown(f"**Estados de cuenta {_bnc}** *(uno o varios meses)*")
+            _files = st.file_uploader(
+                f"Estado de cuenta {_bnc} (.xlsx)",
+                type=["xlsx"], key=f"files_{_k}",
+                accept_multiple_files=True,
+                label_visibility="collapsed",
+            )
+            if _files:
+                st.caption(f"📎 {len(_files)} archivo(s) cargado(s)")
 
-if "dep_result" not in st.session_state:
-    st.session_state.dep_result = None
+        with _c_plantilla:
+            st.markdown("**📋 Plantilla** *(opcional)*")
+            _plantilla = st.file_uploader(
+                "Plantilla de Depósitos (.xlsx)",
+                type=["xlsx", "xlsm"], key=f"plantilla_{_k}",
+                label_visibility="collapsed",
+            )
+            if _plantilla:
+                st.caption(f"📎 {_plantilla.name}")
 
-_any_files = any([files_bbva, files_banorte, files_inbursa])
+        if st.button(f"⚙️ Generar Póliza {_bnc}", type="primary",
+                     disabled=not _files, key=f"btn_{_k}"):
+            _todos_ok, _todos_nc = [], []
+            _arch_bytes = []
+            _total_f = len(_files)
+            _prog = st.progress(0)
 
-if st.button("⚙️ Generar Póliza", type="primary", disabled=not _any_files):
+            for _fi, _f in enumerate(_files):
+                _raw = _f.read()
+                _arch_bytes.append(_raw)
+                with st.spinner(f"{_ico} Leyendo {_bnc} — archivo {_fi+1}/{_total_f}..."):
+                    try:
+                        _ok_r, _nc_r = leer_banco(BytesIO(_raw), _bnc)
+                        for _r in _ok_r:
+                            _r["archivo_idx"] = _fi
+                        _todos_ok.extend(_ok_r)
+                        _todos_nc.extend(_nc_r)
+                        st.success(
+                            f"{_ico} {_bnc} [{_fi+1}]: **{len(_ok_r)}** depósitos"
+                            + (f", {len(_nc_r)} sin clasificar" if _nc_r else "")
+                        )
+                    except Exception as _ex:
+                        st.error(f"Error leyendo {_bnc} [{_fi+1}]: {_ex}")
+                _prog.progress((_fi + 1) / max(_total_f, 1))
 
-    todos_ok, todos_nc = [], []
-    archivos_bytes = {}   # banco -> [raw_bytes, ...]
+            if _todos_ok:
+                _excel_bytes = generar_excel(_todos_ok, plantilla=_plantilla)
 
-    banco_files = [
-        (files_bbva,    "BBVA",    "🟦"),
-        (files_banorte, "BANORTE", "🟥"),
-        (files_inbursa, "INBURSA", "🟧"),
-    ]
+                _fechas_r = [_r["fecha"] for _r in _todos_ok if hasattr(_r["fecha"], "month")]
+                if _fechas_r:
+                    _fmin, _fmax = min(_fechas_r), max(_fechas_r)
+                    _rango = (
+                        _fmin.strftime("%Y-%m") if (
+                            _fmin.year == _fmax.year and _fmin.month == _fmax.month
+                        ) else f"{_fmin.strftime('%Y-%m')} al {_fmax.strftime('%Y-%m')}"
+                    )
+                else:
+                    _rango = datetime.now().strftime("%Y-%m")
+                _nombre_arch = f"DEPOSITOS {_bnc} {_rango}.xlsx"
 
-    total_files = sum(len(fl or []) for fl, _, _ in banco_files)
-    progress = st.progress(0)
-    done = 0
+                _marked = []
+                for _fi2, _raw2 in enumerate(_arch_bytes):
+                    _filas_m = {_r["fila_excel"] for _r in _todos_ok
+                                if _r.get("archivo_idx") == _fi2}
+                    if _filas_m:
+                        _fn2 = _files[_fi2].name if _fi2 < len(_files) else f"{_bnc}_{_fi2+1}.xlsx"
+                        _marked.append({
+                            "ico":    _ico,
+                            "bytes":  marcar_estado_cuenta(_raw2, _filas_m, _bnc),
+                            "n":      len(_filas_m),
+                            "nombre": _fn2,
+                        })
 
-    for fl, banco, ico in banco_files:
-        if not fl:
-            continue
-        archivos_bytes[banco] = []
-        for fi, f in enumerate(fl):
-            raw = f.read()
-            archivos_bytes[banco].append(raw)
-            with st.spinner(f"{ico} Leyendo {banco} — archivo {fi+1}/{len(fl)}..."):
-                try:
-                    ok, nc = leer_banco(BytesIO(raw), banco)
-                    for r in ok:
-                        r["archivo_idx"] = fi  # para marcar el archivo correcto
-                    todos_ok.extend(ok)
-                    todos_nc.extend(nc)
-                    st.success(f"{ico} {banco} [{fi+1}]: **{len(ok)}** depósitos"
-                               + (f", {len(nc)} sin clasificar" if nc else ""))
-                except Exception as e:
-                    st.error(f"Error leyendo {banco} [{fi+1}]: {e}")
-            done += 1
-            progress.progress(done / max(total_files, 1))
-
-    if todos_ok:
-        excel_bytes = generar_excel(todos_ok, plantilla=file_plantilla)
-
-        # Nombre con rango de fechas
-        _fechas = [r["fecha"] for r in todos_ok if hasattr(r["fecha"], "month")]
-        if _fechas:
-            _fmin, _fmax = min(_fechas), max(_fechas)
-            if _fmin.year == _fmax.year and _fmin.month == _fmax.month:
-                _rango = _fmin.strftime("%Y-%m")
+                st.session_state[_res_key] = {
+                    "todos_ok":       _todos_ok,
+                    "todos_nc":       _todos_nc,
+                    "excel_bytes":    _excel_bytes,
+                    "nombre_archivo": _nombre_arch,
+                    "marked":         _marked,
+                }
             else:
-                _rango = f"{_fmin.strftime('%Y-%m')} al {_fmax.strftime('%Y-%m')}"
-        else:
-            _rango = datetime.now().strftime("%Y-%m")
-        nombre_archivo = f"DEPOSITOS BANCARIOS {_rango}.xlsx"
+                st.session_state[_res_key] = None
 
-        # Marcar cada archivo fuente por separado
-        marked = {}   # banco -> [{ico, bytes, n, nombre}]
-        for fl, banco, ico in banco_files:
-            if banco not in archivos_bytes:
-                continue
-            marked[banco] = []
-            for fi, raw in enumerate(archivos_bytes[banco]):
-                filas = {r["fila_excel"] for r in todos_ok
-                         if r["banco"] == banco and r.get("archivo_idx") == fi}
-                if filas:
-                    _fn = fl[fi].name if fl and fi < len(fl) else f"{banco}_{fi+1}.xlsx"
-                    marked[banco].append({
-                        "ico":    ico,
-                        "bytes":  marcar_estado_cuenta(raw, filas, banco),
-                        "n":      len(filas),
-                        "nombre": _fn,
-                    })
+        # ── Resultados del banco ───────────────────────────────────────────────
+        if st.session_state[_res_key]:
+            _res     = st.session_state[_res_key]
+            _tok     = _res["todos_ok"]
+            _tnc     = _res["todos_nc"]
+            _df_ok   = pd.DataFrame(_tok)
+            _tot_g   = _df_ok["monto"].sum()
 
-        st.session_state.dep_result = {
-            "todos_ok":       todos_ok,
-            "todos_nc":       todos_nc,
-            "excel_bytes":    excel_bytes,
-            "nombre_archivo": nombre_archivo,
-            "marked":         marked,
-        }
-    else:
-        st.session_state.dep_result = None
+            st.divider()
+            _mc = st.columns(3)
+            _mc[0].metric(f"{_ico} {_bnc}", f"${_tot_g:,.2f}", f"{len(_df_ok)} mov.")
+            _meses_ok = sorted(_df_ok["fecha"].apply(
+                lambda x: x.strftime("%Y-%m") if hasattr(x, "strftime") else "").unique())
+            if len(_meses_ok) > 1:
+                _mc[1].metric("Meses", str(len(_meses_ok)),
+                              f"{_meses_ok[0]} — {_meses_ok[-1]}")
+            if _tnc:
+                _mc[2].metric("⚠️ Sin clasificar", len(_tnc),
+                              "no incluidos en póliza")
 
-if st.session_state.dep_result:
-    res      = st.session_state.dep_result
-    todos_ok = res["todos_ok"]
-    todos_nc = res["todos_nc"]
+            # Vista previa
+            _abn = {a["col"]: a["nombre"][:30] for a in ABONOS}
+            _prev = []
+            for _r in sorted(_tok, key=lambda x: (
+                    getattr(x["fecha"], "year", 0),
+                    getattr(x["fecha"], "month", 0),
+                    x["fecha"])):
+                _prev.append({
+                    "Fecha":       _r["fecha"].strftime("%d/%m/%Y") if hasattr(_r["fecha"], "strftime") else str(_r["fecha"]),
+                    "Abono":       _abn.get(_r["col_abono"], str(_r["col_abono"])),
+                    "Monto":       _r["monto"],
+                    "Descripción": _r["desc"][:55],
+                })
+            st.dataframe(
+                pd.DataFrame(_prev).style.format({"Monto": "${:,.2f}"}),
+                use_container_width=True, height=300,
+            )
 
-    st.subheader("📊 Resumen")
-    df_ok = pd.DataFrame(todos_ok)
-    total_general = df_ok["monto"].sum()
+            if _tnc:
+                with st.expander(f"⚠️ Sin clasificar ({len(_tnc)} mov.)"):
+                    _df_nc = pd.DataFrame(_tnc)
+                    _df_nc["fecha"] = _df_nc["fecha"].apply(
+                        lambda x: x.strftime("%d/%m/%Y") if hasattr(x, "strftime") else str(x))
+                    st.dataframe(_df_nc.style.format({"monto": "${:,.2f}"}),
+                                 use_container_width=True)
 
-    # Métricas por banco
-    sc = st.columns(4)
-    for ci, (banco, ico) in enumerate([("BBVA","🟦"),("BANORTE","🟥"),("INBURSA","🟧")]):
-        sub = df_ok[df_ok["banco"] == banco]
-        sc[ci].metric(f"{ico} {banco}",
-                      f"${sub['monto'].sum():,.2f}",
-                      f"{len(sub)} mov.")
-    sc[3].metric("💰 TOTAL", f"${total_general:,.2f}", f"{len(df_ok)} mov.")
+            st.download_button(
+                label=f"📥 Descargar Póliza {_bnc}",
+                data=_res["excel_bytes"],
+                file_name=_res["nombre_archivo"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+                key=f"dl_{_k}",
+            )
+            _vwr.show(_res["excel_bytes"], filename=_res["nombre_archivo"],
+                      key=f"dep_vwr_{_k}")
 
-    # Métricas por mes (si hay más de uno)
-    _meses_ok = sorted(df_ok["fecha"].apply(
-        lambda x: x.strftime("%Y-%m") if hasattr(x,"strftime") else "").unique())
-    if len(_meses_ok) > 1:
-        st.caption(f"Meses procesados: {', '.join(_meses_ok)}")
-        _mes_cols = st.columns(min(len(_meses_ok), 6))
-        for _mi, _mes in enumerate(_meses_ok):
-            _sub_m = df_ok[df_ok["fecha"].apply(
-                lambda x: x.strftime("%Y-%m") if hasattr(x,"strftime") else "") == _mes]
-            _mes_cols[_mi % 6].metric(_mes, f"${_sub_m['monto'].sum():,.2f}",
-                                       f"{len(_sub_m)} mov.")
-
-    st.subheader("📋 Vista previa")
-    abono_nombre = {a["col"]: a["nombre"][:30] for a in ABONOS}
-    cargo_nombre = {9:"BANORTE",10:"BBVA",11:"INBURSA"}
-    _ord_banco   = {"BBVA":0,"BANORTE":1,"INBURSA":2}
-
-    preview_rows = []
-    for r in sorted(todos_ok, key=lambda x:(
-                        getattr(x["fecha"],"year",0),
-                        getattr(x["fecha"],"month",0),
-                        _ord_banco.get(x["banco"],9),
-                        x["fecha"])):
-        preview_rows.append({
-            "Mes":         r["fecha"].strftime("%Y-%m") if hasattr(r["fecha"],"strftime") else "",
-            "Fecha":       r["fecha"].strftime("%d/%m/%Y") if hasattr(r["fecha"],"strftime") else str(r["fecha"]),
-            "Banco":       r["banco"],
-            "Abono":       abono_nombre.get(r["col_abono"], str(r["col_abono"])),
-            "Monto":       r["monto"],
-            "Descripción": r["desc"][:55],
-        })
-
-    st.dataframe(pd.DataFrame(preview_rows).style.format({"Monto":"${:,.2f}"}),
-                 use_container_width=True, height=400)
-
-    if todos_nc:
-        st.subheader(f"⚠️ Sin clasificar ({len(todos_nc)} movimientos — no incluidos)")
-        df_nc = pd.DataFrame(todos_nc)
-        df_nc["fecha"] = df_nc["fecha"].apply(
-            lambda x: x.strftime("%d/%m/%Y") if hasattr(x,"strftime") else str(x))
-        st.dataframe(df_nc.style.format({"monto":"${:,.2f}"}), use_container_width=True)
-
-    st.subheader("💾 Descargar")
-    st.download_button(
-        label="📥 Descargar Póliza Excel (original)",
-        data=res["excel_bytes"],
-        file_name=res["nombre_archivo"],
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary",
-    )
-    import _viewer as _vwr
-    _vwr.show(res["excel_bytes"], filename=res["nombre_archivo"], key="dep_vwr")
-
-    if res["marked"]:
-        st.subheader("🗙️ Estados de cuenta marcados")
-        st.caption("Las filas incluidas en la póliza aparecen resaltadas en el color del banco.")
-        for banco, info_list in res["marked"].items():
-            for _idx2, info in enumerate(info_list):
-                _lbl = f"{info['ico']} {info['nombre']} — {info['n']} mov. marcados"
-                st.download_button(
-                    label=_lbl,
-                    data=info["bytes"],
-                    file_name=f"MARCADO_{banco}_{_idx2+1}_{datetime.now().strftime('%Y-%m')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_marcado_{banco}_{_idx2}",
-                )
-
-else:
-    st.info("⬆️ Sube al menos un archivo de depósito para continuar.")
+            if _res["marked"]:
+                st.markdown("**🗙️ Estados de cuenta marcados**")
+                for _idx2, _info in enumerate(_res["marked"]):
+                    st.download_button(
+                        label=f"{_info['ico']} {_info['nombre']} — {_info['n']} mov. marcados",
+                        data=_info["bytes"],
+                        file_name=f"MARCADO_{_bnc}_{_idx2+1}_{datetime.now().strftime('%Y-%m')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"dl_marcado_{_k}_{_idx2}",
+                    )
