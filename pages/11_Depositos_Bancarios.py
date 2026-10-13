@@ -199,9 +199,9 @@ def clasificar_banorte(desc: str, monto: float):
     if "ICIGAS" in d:
         return 17
 
-    # SERV <NOMBRE> <DÍGITOS>C/D
+    # SERV / GAS <NOMBRE> <DÍGITOS>C/D  (ej: "GAS RIO DE LA PLATA 08228014C")
     if "07277262C" in d or "07277262D" in d or (
-            "SERV" in d and re.search(r'\d{5,}[CD]', d)):
+            ("SERV" in d or d.startswith("GAS ")) and re.search(r'\d{5,}[CD]', d)):
         if "AMERICAN" in d: return 12
         if "EFECTIVALE" in d: return 13
         if "EDENRED" in d or "TICKET" in d: return 14
@@ -885,64 +885,60 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
-# ─── UI — por banco (independiente) ─────────────────────────────────────────
+# ─── UI — por banco (tabs independientes) ───────────────────────────────────
 import _viewer as _vwr
 
 _BANCOS = [
     {
-        "key": "bbva",    "nombre": "BBVA",
-        "ico_svg": "🏦",  "subtitulo": "102-01-0001-0003",
-        "icon_emoji": "🟦",
-        "grad": "bk-hdr-bbva", "body": "bk-body-bbva",
-        "lbl_cls": "bk-label-bbva", "sep_cls": "bk-result-sep-bbva",
-        "btn_color": "#004481",
+        "key": "bbva",    "nombre": "BBVA",    "tab_lbl": "🟦  BBVA Bancomer",
+        "ico": "🟦", "subtitulo": "102-01-0001-0003",
+        "sep_cls": "bk-result-sep-bbva",
     },
     {
-        "key": "banorte", "nombre": "BANORTE",
-        "ico_svg": "🏛️",  "subtitulo": "102-01-0001-0001",
-        "icon_emoji": "🟥",
-        "grad": "bk-hdr-banorte", "body": "bk-body-banorte",
-        "lbl_cls": "bk-label-banorte", "sep_cls": "bk-result-sep-banorte",
-        "btn_color": "#C8102E",
+        "key": "banorte", "nombre": "BANORTE", "tab_lbl": "🟥  Banorte",
+        "ico": "🟥", "subtitulo": "102-01-0001-0001",
+        "sep_cls": "bk-result-sep-banorte",
     },
     {
-        "key": "inbursa", "nombre": "INBURSA",
-        "ico_svg": "🏢",  "subtitulo": "102-01-0001-0002",
-        "icon_emoji": "🟧",
-        "grad": "bk-hdr-inbursa", "body": "bk-body-inbursa",
-        "lbl_cls": "bk-label-inbursa", "sep_cls": "bk-result-sep-inbursa",
-        "btn_color": "#E06000",
+        "key": "inbursa", "nombre": "INBURSA", "tab_lbl": "🟧  Inbursa",
+        "ico": "🟧", "subtitulo": "102-01-0001-0002",
+        "sep_cls": "bk-result-sep-inbursa",
     },
 ]
 
-for _bcfg in _BANCOS:
-    _k       = _bcfg["key"]
-    _bnc     = _bcfg["nombre"]
-    _ico     = _bcfg["icon_emoji"]
-    _res_key = f"dep_result_{_k}"
+# Inicializar session_state antes de crear los tabs
+for _bc in _BANCOS:
+    if f"dep_result_{_bc['key']}" not in st.session_state:
+        st.session_state[f"dep_result_{_bc['key']}"] = None
 
-    if _res_key not in st.session_state:
-        st.session_state[_res_key] = None
+_tabs = st.tabs([_bc["tab_lbl"] for _bc in _BANCOS])
 
-    # ── Cabecera de banco con color ────────────────────────────────────────────
-    st.markdown(f"""
-    <div class="bk-hdr {_bcfg['grad']}">
-        <div class="bk-hdr-icon">{_bcfg['ico_svg']}</div>
-        <div class="bk-hdr-text">
-            <h3>{_bnc}</h3>
-            <p>Cuenta contable: {_bcfg['subtitulo']} &nbsp;|&nbsp; Estados de cuenta .xlsx</p>
+for _tab, _bcfg in zip(_tabs, _BANCOS):
+    with _tab:
+        _k   = _bcfg["key"]
+        _bnc = _bcfg["nombre"]
+        _ico = _bcfg["ico"]
+        _res_key = f"dep_result_{_k}"
+
+        # ── Cabecera del banco ─────────────────────────────────────────────────
+        st.markdown(f"""
+        <div class="bk-hdr {
+            'bk-hdr-bbva'    if _k=='bbva' else
+            'bk-hdr-banorte' if _k=='banorte' else
+            'bk-hdr-inbursa'
+        }">
+            <div class="bk-hdr-text">
+                <h3>{_ico} &nbsp; {_bnc}</h3>
+                <p>Cuenta contable: {_bcfg['subtitulo']} &nbsp;·&nbsp; Estados de cuenta .xlsx</p>
+            </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    # ── Cuerpo del panel ───────────────────────────────────────────────────────
-    with st.container():
-        st.markdown(f'<div class="bk-body {_bcfg["body"]}">', unsafe_allow_html=True)
+        st.write("")
         _c_files, _c_plantilla = st.columns([3, 2])
 
         with _c_files:
-            st.markdown(f'<p class="bk-label {_bcfg["lbl_cls"]}">📂 Estados de cuenta</p>',
-                        unsafe_allow_html=True)
+            st.markdown(f"**📂 Estados de cuenta** *(uno o varios meses)*")
             _files = st.file_uploader(
                 f"Estado de cuenta {_bnc} (.xlsx)",
                 type=["xlsx"], key=f"files_{_k}",
@@ -950,21 +946,19 @@ for _bcfg in _BANCOS:
                 label_visibility="collapsed",
             )
             if _files:
-                st.caption(f"✅ {len(_files)} archivo(s) cargado(s)")
+                st.success(f"✅ {len(_files)} archivo(s) cargado(s)", icon="📎")
 
         with _c_plantilla:
-            st.markdown(f'<p class="bk-label {_bcfg["lbl_cls"]}">📋 Plantilla (opcional)</p>',
-                        unsafe_allow_html=True)
+            st.markdown("**📋 Plantilla** *(opcional)*")
             _plantilla = st.file_uploader(
                 "Plantilla de Depósitos (.xlsx)",
                 type=["xlsx", "xlsm"], key=f"plantilla_{_k}",
                 label_visibility="collapsed",
             )
             if _plantilla:
-                st.caption(f"✅ {_plantilla.name}")
-        st.markdown('</div>', unsafe_allow_html=True)
+                st.success(f"✅ {_plantilla.name}", icon="📋")
 
-        st.markdown("")   # espacio antes del botón
+        st.write("")
         if st.button(f"⚙️  Generar Póliza {_bnc}", type="primary",
                      disabled=not _files, key=f"btn_{_k}"):
             _todos_ok, _todos_nc = [], []
