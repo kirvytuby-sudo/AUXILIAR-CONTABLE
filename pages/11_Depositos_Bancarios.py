@@ -102,13 +102,18 @@ def _hora_citi(desc: str) -> int:
 def clasificar_bbva(desc: str, monto: float):
     """
     BBVA:
+      CUENTAS PROPIAS                     → None  (transferencias entre cuentas propias)
       *AMEX* en cualquier parte           → col 12 (AMEX transit)
       VENTAS PUNTOS TDC / VENTAS CREDITO
         / TERMINALES PV / TDC INTER       → col 18 (Dep. Tránsito Tarjetas Bancomer)
       DEPOSITO EN EFECTIVO                → col 15 (Caja 101-01-0001)
+      GAS/SERV RIO DE LA PLATA            → col 16 (Dep. Tránsito T BANORTE)
       Cualquier otra descripción (TPV)    → col 18 (Dep. Tránsito Tarjetas Bancomer)
     """
     d = desc.upper()
+    # Transferencias entre cuentas propias → no se registran en póliza
+    if "CUENTAS PROPIAS" in d:
+        return None
     if "AMEX" in d:
         return 12
     if ("VENTAS PUNTOS TDC" in d or "VENTAS CREDITO" in d
@@ -339,7 +344,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         (["EDENRED", "TICKET", "TICKETCARD"],      14),
         (["FONDO", "CAJA", "EFECTIVO"],             15),
         (["INBURSA"],                              19),  # antes de TRANSITO para evitar falso match
-        (["GASNGO", "GASN", "BANORTE", "TRANSITO"], 16),
+        (["GASNGO", "GASN", "BANORTE"], 16),
         (["SHELL", "SMARTBT", "ICIGAS"],           17),
         (["BANCOMER", "BBVA", "TDC", "VISA"],      18),
         (["PLUXE", "PLUXEE"],                      20),
@@ -389,7 +394,10 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
                 if _cta and _banco:
                     for _key in ("BANORTE", "BBVA", "INBURSA"):
                         if _key in _banco and not any(c["banco"] == _key for c in cargos_list):
-                            cargos_list.append({"banco": _key, "cuenta": _cta, "col": 0})
+                            # Siempre usar el número de cuenta del diccionario CARGOS
+                            # (la plantilla puede tener cuentas desactualizadas)
+                            _cta_final = CARGOS.get(_key, (_cta,))[0]
+                            cargos_list.append({"banco": _key, "cuenta": _cta_final, "col": 0})
                             break
                 # ABONOS (cols 4-5)
                 _cta_ab  = str(_row[3] or "").strip() if len(_row) > 3 else ""
@@ -441,6 +449,29 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
 
     # Mapa banco → col cargo real
     cargos_col_map = {_c["banco"]: _c["col"] for _c in cargos_list}
+
+    # ── Eliminar columnas sin datos (bancos sin registros / abonos no usados) ────
+    _bancos_activos = {r["banco"]     for r in registros}
+    _sem_usados     = {r["col_abono"] for r in registros if r.get("col_abono") is not None}
+
+    cargos_list      = [c for c in cargos_list      if c["banco"] in _bancos_activos]
+    abonos_efectivos = [a for a in abonos_efectivos  if a.get("sem_col") in _sem_usados]
+
+    # Re-asignar columnas contiguas
+    for _i2, _c2 in enumerate(cargos_list):
+        _c2["col"] = CARGO_START + _i2
+    N_CARGOS        = len(cargos_list)
+    COL_TOT_CARGOS  = CARGO_START + N_CARGOS
+    ABONO_START     = COL_TOT_CARGOS + 1
+    for _i2, _a2 in enumerate(abonos_efectivos):
+        _a2["col"] = ABONO_START + _i2
+    semantic_to_actual = {_a2["sem_col"]: _a2["col"] for _a2 in abonos_efectivos
+                          if _a2.get("sem_col") is not None}
+    N_ABONOS        = len(abonos_efectivos)
+    COL_TOT_ABONOS  = ABONO_START + N_ABONOS
+    COL_DIFERENCIA  = COL_TOT_ABONOS + 1
+    N_COLS          = COL_DIFERENCIA
+    cargos_col_map  = {_c2["banco"]: _c2["col"] for _c2 in cargos_list}
 
     # ── Fills de color ────────────────────────────────────────────────────────────
     F_META_HDR = PatternFill("solid", fgColor="0369A1")   # sky-700  — headers meta (fila 3)
