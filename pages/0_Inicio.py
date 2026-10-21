@@ -540,7 +540,6 @@ def _vencimientos_widget():
 </div>""", unsafe_allow_html=True)
 
 _vencimientos_widget()
-st.info("⏳ Cargando sección de fechas DyP…")  # DIAGNÓSTICO — se quitará después
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECCIÓN: FECHAS LÍMITE DyP POR RFC (inline, sin función wrapper)
