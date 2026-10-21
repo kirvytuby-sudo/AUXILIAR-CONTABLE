@@ -549,6 +549,10 @@ def _dyp_widget():
     from datetime import date, timedelta
 
     hoy = date.today()
+    st.markdown("""
+<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:14px;
+            padding:18px 20px 14px;margin-bottom:8px;">
+""", unsafe_allow_html=True)
 
     DIGITO_DIAS = {0: 5, 1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 5}
 
@@ -590,11 +594,14 @@ def _dyp_widget():
     MESES_ES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
                 "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
-    with st.expander(
-        f"📅 Fechas límite DyP — Declaración de **{MESES_ES[ref_month]} {ref_year}** "
-        f"(se declara en {MESES_ES[dec_month]})",
-        expanded=True,
-    ):
+    st.markdown(
+        f"<p style='font-size:.8rem;font-weight:800;color:#1E3A8A;letter-spacing:.4px;"
+        f"text-transform:uppercase;margin-bottom:8px'>"
+        f"📅 Fechas límite DyP — Declaración de {MESES_ES[ref_month]} {ref_year} "
+        f"(se presenta en {MESES_ES[dec_month]})</p>",
+        unsafe_allow_html=True,
+    )
+    if True:
         # ── Tabla de dígitos ────────────────────────────────────────────────
         st.markdown(
             "<p style='font-size:.78rem;color:#64748B;margin-bottom:6px'>"
@@ -675,6 +682,7 @@ def _dyp_widget():
                 )
 
 _dyp_widget()
+st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<div style='margin:6px 0 4px'></div>", unsafe_allow_html=True)
 
 # ── Fetch data ────────────────────────────────────────────────────────────────
