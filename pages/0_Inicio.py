@@ -540,7 +540,7 @@ def _vencimientos_widget():
 </div>""", unsafe_allow_html=True)
 
 _vencimientos_widget()
-st.markdown("<div style='margin:10px 0 4px'></div>", unsafe_allow_html=True)
+st.info("⏳ Cargando sección de fechas DyP…")  # DIAGNÓSTICO — se quitará después
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECCIÓN: FECHAS LÍMITE DyP POR RFC (inline, sin función wrapper)
