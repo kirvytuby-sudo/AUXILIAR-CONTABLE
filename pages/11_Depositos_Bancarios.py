@@ -183,13 +183,21 @@ def clasificar_banorte(desc: str, monto: float):
     if "EDENRED" in d or "HSBCPGMD" in d or "BCO:0021" in d:
         return 14
 
-    # Efectivo en caja
-    if "DEP.EFECTIVO" in d or "DEPOSITO EN EFECTIVO" in d:
+    # Efectivo en caja  (incluyendo "MEXICO" como descripción corta de depósito en efectivo)
+    if "DEP.EFECTIVO" in d or "DEPOSITO EN EFECTIVO" in d or d.strip() == "MEXICO":
         return 15
 
     # INBURSA via SPEI (BCO:0036 = código Inbursa en SPEI) → tránsito Inbursa
     if "BCO:0036" in d or ("INBURSA" in d and "SPEI RECIBIDO" in d):
         return 19
+
+    # Traspasos entre cuentas propias → no se registran
+    if "TRASPASO" in d and ("CUENTA" in d or "TERCEROS" in d):
+        return None
+
+    # Descripción corta "BANORTE" → tránsito TPV Banorte
+    if d.strip() in ("BANORTE",):
+        return 16
 
     # GASnGO → tránsito GASnGO-BANORTE (match exacto del nombre de empresa)
     if "GASNGO" in d or "GASN GO" in d:
@@ -199,9 +207,9 @@ def clasificar_banorte(desc: str, monto: float):
     if "ICIGAS" in d:
         return 17
 
-    # SERV / GAS <NOMBRE> <DÍGITOS>C/D  (ej: "GAS RIO DE LA PLATA 08228014C")
+    # SERV / GAS <NOMBRE> <DÍGITOS>[C/D]  — terminal C/D opcional (ej: "SERV MENA 08766730")
     if "07277262C" in d or "07277262D" in d or (
-            ("SERV" in d or d.startswith("GAS ")) and re.search(r'\d{5,}[CD]', d)):
+            ("SERV" in d or d.startswith("GAS ")) and re.search(r'\d{6,}[CD]?', d)):
         if "AMERICAN" in d: return 12
         if "EFECTIVALE" in d: return 13
         if "EDENRED" in d or "TICKET" in d: return 14
@@ -243,8 +251,11 @@ def leer_banco(file_obj, banco: str) -> tuple[list, list]:
         if not hasattr(fecha, "day"):
             continue
         desc  = str(r[1] or "").strip()
-        monto = r[2]
-        if not monto or monto <= 0:
+        try:
+            monto = float(str(r[2]).replace(",", "")) if r[2] not in (None, "-", "") else 0.0
+        except (ValueError, TypeError):
+            monto = 0.0
+        if monto <= 0:
             continue
 
         col_abono = fn(desc, monto)
@@ -379,9 +390,15 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     if plantilla is not None:
         wb = openpyxl.load_workbook(plantilla)
         ws = wb["POLIZA"] if "POLIZA" in wb.sheetnames else wb.active
+        # Desmerger celdas para poder limpiar sin error MergedCell
+        for _mr in list(ws.merged_cells.ranges):
+            ws.unmerge_cells(str(_mr))
         for _ri in range(1, ws.max_row + 1):
             for _ci in range(1, ws.max_column + 1):
-                ws.cell(row=_ri, column=_ci).value = None
+                try:
+                    ws.cell(row=_ri, column=_ci).value = None
+                except AttributeError:
+                    pass
 
         _hoja_cuentas = next(
             (s for s in wb.sheetnames if s.strip().upper() == "CUENTAS"), None)
