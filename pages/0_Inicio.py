@@ -542,6 +542,141 @@ def _vencimientos_widget():
 _vencimientos_widget()
 st.markdown("<div style='margin:10px 0 4px'></div>", unsafe_allow_html=True)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# WIDGET: FECHAS LÍMITE DyP POR RFC
+# ══════════════════════════════════════════════════════════════════════════════
+def _dyp_widget():
+    from datetime import date, timedelta
+
+    hoy = date.today()
+
+    DIGITO_DIAS = {0: 5, 1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 5}
+
+    def _add_biz(start: date, n: int) -> date:
+        d = start
+        added = 0
+        while added < n:
+            d += timedelta(days=1)
+            if d.weekday() < 5:
+                added += 1
+        return d
+
+    def _fecha_limite(year: int, month: int, extra: int) -> date:
+        """Día 17 del mes (year, month) + extra días hábiles."""
+        base = date(year, month, 17)
+        if base.weekday() >= 5:            # si cae sab/dom, mueve al lunes siguiente
+            base = _add_biz(base - timedelta(days=1), 1)
+        return _add_biz(base, extra) if extra else base
+
+    def _periodo_vigente():
+        """Devuelve (año_dec, mes_dec) del periodo de declaración abierto o próximo."""
+        for dy in range(-1, 2):
+            ref_month = (hoy.month - 1 + dy - 1) % 12 + 1
+            ref_year  = hoy.year + ((hoy.month - 1 + dy - 1) // 12)
+            dec_month = ref_month % 12 + 1
+            dec_year  = ref_year + (1 if ref_month == 12 else 0)
+            # fecha límite más tardía (dígito 9/0 → +5)
+            limite_max = _fecha_limite(dec_year, dec_month, 5)
+            if hoy <= limite_max:
+                return ref_year, ref_month, dec_year, dec_month
+        # fallback: mes anterior
+        m = hoy.month - 1 or 12
+        y = hoy.year if hoy.month > 1 else hoy.year - 1
+        dm = m % 12 + 1
+        dy2 = y + (1 if m == 12 else 0)
+        return y, m, dy2, dm
+
+    ref_year, ref_month, dec_year, dec_month = _periodo_vigente()
+    MESES_ES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+
+    with st.expander(
+        f"📅 Fechas límite DyP — Declaración de **{MESES_ES[ref_month]} {ref_year}** "
+        f"(se declara en {MESES_ES[dec_month]})",
+        expanded=True,
+    ):
+        # ── Tabla de dígitos ────────────────────────────────────────────────
+        st.markdown(
+            "<p style='font-size:.78rem;color:#64748B;margin-bottom:6px'>"
+            "El plazo base es el <strong>día 17</strong> del mes siguiente. "
+            "Según el <strong>6° dígito numérico</strong> del RFC se otorgan días hábiles adicionales:</p>",
+            unsafe_allow_html=True,
+        )
+
+        cols = st.columns(5)
+        labels = [("1 y 2", 1), ("3 y 4", 2), ("5 y 6", 3), ("7 y 8", 4), ("9 y 0", 5)]
+        for col, (lbl, extra) in zip(cols, labels):
+            fecha = _fecha_limite(dec_year, dec_month, extra)
+            dias_rest = (fecha - hoy).days
+            if dias_rest < 0:   bg, brd, txt = "#F1F5F9", "#CBD5E1", "#94A3B8"
+            elif dias_rest <= 3: bg, brd, txt = "#FEF2F2", "#FCA5A5", "#DC2626"
+            elif dias_rest <= 8: bg, brd, txt = "#FFFBEB", "#FCD34D", "#D97706"
+            else:                bg, brd, txt = "#F0FDF4", "#6EE7B7", "#059669"
+            estado = "✅ Venció" if dias_rest < 0 else (f"🔴 {dias_rest}d" if dias_rest <= 3 else (f"🟡 {dias_rest}d" if dias_rest <= 8 else f"🟢 {dias_rest}d"))
+            with col:
+                st.markdown(f"""
+<div style="background:{bg};border:1.5px solid {brd};border-radius:12px;
+            padding:12px 8px;text-align:center;">
+  <div style="font-size:1.05rem;font-weight:900;color:{txt}">{fecha.strftime('%d/%m/%Y')}</div>
+  <div style="font-size:.68rem;font-weight:700;color:#475569;margin:3px 0">
+    Dígito <strong style="color:{txt}">{lbl}</strong>
+  </div>
+  <div style="font-size:.65rem;color:{txt};font-weight:600">+{extra} día{'s' if extra>1 else ''} hábil{'es' if extra>1 else ''}</div>
+  <div style="font-size:.7rem;color:{txt};margin-top:4px">{estado}</div>
+</div>""", unsafe_allow_html=True)
+
+        st.markdown("<div style='margin:10px 0'></div>", unsafe_allow_html=True)
+
+        # ── Calculador por RFC ──────────────────────────────────────────────
+        st.markdown("#### 🔍 Calcular fecha por RFC")
+        col_inp, col_res = st.columns([2, 3])
+        with col_inp:
+            rfc_input = st.text_input(
+                "RFC del contribuyente",
+                placeholder="Ej. MEHJ800101AM3",
+                max_chars=13,
+                key="dyp_rfc_input",
+                label_visibility="collapsed",
+            ).strip().upper()
+        with col_res:
+            if rfc_input:
+                digits = [c for c in rfc_input if c.isdigit()]
+                if len(digits) < 6:
+                    st.warning("⚠️ RFC incompleto — necesita al menos 6 dígitos (parte de fecha).")
+                else:
+                    sexto = int(digits[5])
+                    extra = DIGITO_DIAS[sexto]
+                    fecha_lim = _fecha_limite(dec_year, dec_month, extra)
+                    dias_rest = (fecha_lim - hoy).days
+                    if dias_rest < 0:
+                        color_r, msg = "#DC2626", f"⚠️ Venció hace {-dias_rest} día(s)"
+                    elif dias_rest == 0:
+                        color_r, msg = "#DC2626", "🔴 ¡Vence HOY!"
+                    elif dias_rest <= 3:
+                        color_r, msg = "#D97706", f"🟡 Vence en {dias_rest} día(s)"
+                    else:
+                        color_r, msg = "#059669", f"🟢 Faltan {dias_rest} días"
+                    st.markdown(f"""
+<div style="background:#F8FAFC;border:1.5px solid #E2E8F0;border-left:5px solid {color_r};
+            border-radius:10px;padding:12px 18px;line-height:1.7">
+  <span style="font-size:.75rem;color:#64748B">RFC: <strong style="color:#0F172A">{rfc_input}</strong>
+  &nbsp;·&nbsp; 6° dígito: <strong style="color:{color_r}">{sexto}</strong>
+  &nbsp;·&nbsp; +{extra} día{'s' if extra>1 else ''} hábil{'es' if extra>1 else ''}</span><br>
+  <span style="font-size:1.15rem;font-weight:800;color:{color_r}">
+    Fecha límite: {fecha_lim.strftime('%d/%m/%Y')} — {MESES_ES[dec_month]} {dec_year}
+  </span><br>
+  <span style="font-size:.8rem;color:{color_r};font-weight:600">{msg}</span>
+</div>""", unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    "<p style='font-size:.8rem;color:#94A3B8;padding:10px 0'>"
+                    "Escribe un RFC para calcular su fecha límite exacta.</p>",
+                    unsafe_allow_html=True,
+                )
+
+_dyp_widget()
+st.markdown("<div style='margin:6px 0 4px'></div>", unsafe_allow_html=True)
+
 # ── Fetch data ────────────────────────────────────────────────────────────────
 col_hdr, col_btn = st.columns([6, 1])
 with col_hdr:
